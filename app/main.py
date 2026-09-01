@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+
+from app.models.job import Job
 from app.routes.jobs import router as jobs_router
 
 app = FastAPI(title="TaskScale AI")
