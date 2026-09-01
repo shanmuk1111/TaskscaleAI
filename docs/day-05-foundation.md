@@ -1,5 +1,7 @@
 # Day -05 PostgreSQL + Worker Processing
 
+Day 5 completed: Connected TaskScale AI to PostgreSQL using SQLAlchemy, created the jobs table and Job model, built the worker process, and implemented the job processing flow from QUEUED to COMPLETED with results stored in PostgreSQL. Tested successfully with multiple image resize jobs
+
 ## 1. Installed PostgreSQL
 
 We installed PostgreSQL and verified it:
