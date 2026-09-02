@@ -12,10 +12,12 @@ router = APIRouter()
 @router.post("/jobs")
 def create_job(job: JobCreate, db: Session = Depends(get_db)):
     new_job = Job(
-        type=job.type,
-        status="QUEUED",
-        input=job.input
-    )
+    type=job.type,
+    status="QUEUED",
+    input=job.input,
+    retry_count=0,
+    max_retries=3
+)
 
     db.add(new_job)
     db.commit()
