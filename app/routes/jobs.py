@@ -35,11 +35,14 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
     db.add(new_job)
     db.commit()
     db.refresh(new_job)
-
-    # Add the job ID to Redis
-    redis_client.rpush(
-        "taskscale:jobs",
-        str(new_job.id)
+    
+    
+    # Add the job to the Redis Stream
+    redis_client.xadd(
+        "taskscale:job_stream",
+        {
+            "job_id": str(new_job.id)
+        }
     )
 
     return new_job

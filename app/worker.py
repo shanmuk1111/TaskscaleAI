@@ -93,148 +93,160 @@ while True:
     job = None
 
     try:
-        result = redis_client.blpop(
-            "taskscale:jobs",
-            timeout=5
+        result = redis_client.xreadgroup(
+        groupname="workers",
+        consumername=worker_id,
+        streams={"taskscale:job_stream": ">"},
+        count=1,
+        block=5000
         )
 
-        if result is None:
+        if not result:
             print("Worker is waiting for a job...")
             continue
 
-        queue_name, job_id = result
+        stream_name, messages = result[0]
 
-        print(
-            f"Worker {worker_id} picked up "
-            f"job {job_id} from Redis"
-        )
+        for message_id, message_data in messages:
+            job_id = int(message_data["job_id"])
 
-        db = SessionLocal()
-
-        try:
-            job = (
-                db.query(Job)
-                .filter(Job.id == int(job_id))
-                .first()
+            print(
+                f"Worker {worker_id} picked up job {job_id} "
+                f"(message {message_id})"
             )
 
-            if job is None:
+            db = SessionLocal()
+            job = None
+
+            try:
+                job = db.query(Job).filter(Job.id == job_id).first()
+
+                if job is None:
+                    print(f"Job {job_id} was not found in PostgreSQL")
+
+                    redis_client.xack(
+                        "taskscale:job_stream",
+                        "workers",
+                        message_id
+                    )
+
+                    continue
+
+                # Assign this job to the current worker
+                job.worker_id = worker_id
+                job.status = "RUNNING"
+                db.commit()
+
+                print(f"Job {job.id} is RUNNING")
+
+                # --------------------------------
+                # Simulate job processing
+                # --------------------------------
+
+                if job.input.get("fail_once") and job.retry_count == 0:
+                    raise Exception("Simulated temporary failure")
+
+                if job.input.get("force_fail"):
+                    raise Exception("Simulated permanent failure")
+
+                time.sleep(5)
+
+                # --------------------------------
+                # Job succeeded
+                # --------------------------------
+
+                job.result = {
+                    "message": "Job processed successfully",
+                    "job_id": job.id,
+                    "worker_id": worker_id
+                }
+
+                job.status = "COMPLETED"
+                db.commit()
+
+                # ACK only after successful processing
+                redis_client.xack(
+                    "taskscale:job_stream",
+                    "workers",
+                    message_id
+                )
+
                 print(
-                    f"Job {job_id} was not found "
-                    f"in PostgreSQL"
-                )
-                continue
-
-            job.status = "RUNNING"
-            job.worker_id = worker_id
-            db.commit()
-
-            print(
-                f"Job {job.id} is RUNNING "
-                f"(attempt {job.retry_count + 1}/"
-                f"{job.max_retries})"
-            )
-
-            # --------------------------------
-            # Simulate job processing
-            # --------------------------------
-
-            # Fail once, then succeed on retry
-            if (
-                job.input.get("fail_once")
-                and job.retry_count == 0
-            ):
-                raise Exception(
-                    "Simulated temporary failure"
+                    f"Job {job.id} is COMPLETED"
                 )
 
-            # Always fail
-            if job.input.get("force_fail"):
-                raise Exception(
-                    "Simulated permanent failure"
+                print(
+                    f"ACK sent for job {job.id}"
                 )
 
-            # Simulate processing time
-            time.sleep(5)
+            except Exception as e:
 
-            # --------------------------------
-            # Job succeeded
-            # --------------------------------
+                db.rollback()
 
-            job.result = {
-                "message": "Job processed successfully",
-                "job_id": job.id,
-            }
+                if job is not None:
 
-            job.status = "COMPLETED"
-
-            db.commit()
-
-            print(
-                f"Job {job.id} is COMPLETED"
-            )
-
-        except Exception as e:
-            db.rollback()
-
-            if job is not None:
-                job.retry_count += 1
-
-                if job.retry_count < job.max_retries:
-
-                    job.status = "RETRYING"
+                    job.retry_count += 1
                     job.error = str(e)
 
-                    db.commit()
+                    if job.retry_count < job.max_retries:
 
-                    print(
-                        f"Job {job.id} failed. "
-                        f"Retry "
-                        f"{job.retry_count}/"
-                        f"{job.max_retries}"
-                    )
+                        job.status = "RETRYING"
+                        db.commit()
 
-                    # Small delay before retry
-                    time.sleep(2)
+                        print(
+                            f"Job {job.id} failed. "
+                            f"Retry {job.retry_count}/{job.max_retries}"
+                        )
 
-                    # Put job back into Redis
-                    redis_client.rpush(
-                        "taskscale:jobs",
-                        str(job.id)
-                    )
+                        time.sleep(2)
 
-                    print(
-                        f"Job {job.id} added "
-                        f"back to Redis"
-                    )
+                        # Put retry into the Stream
+                        redis_client.xadd(
+                            "taskscale:job_stream",
+                            {
+                                "job_id": str(job.id)
+                            }
+                        )
 
-                else:
+                        # ACK the failed attempt
+                        redis_client.xack(
+                            "taskscale:job_stream",
+                            "workers",
+                            message_id
+                        )
 
-                    job.status = "FAILED"
-                    job.error = str(e)
+                        print(
+                            f"Job {job.id} added back to Redis Stream"
+                        )
 
-                    db.commit()
+                    else:
 
-                    # Add permanently failed job
-                    # to Dead Letter Queue
-                    redis_client.rpush(
-                        "taskscale:dead_letters",
-                        str(job.id)
-                    )
+                        job.status = "FAILED"
+                        db.commit()
 
-                    print(
-                        f"Job {job.id} permanently "
-                        f"FAILED after "
-                        f"{job.retry_count} attempts"
-                    )
+                        # Put permanently failed job into DLQ
+                        redis_client.rpush(
+                            "taskscale:dead_letters",
+                            str(job.id)
+                        )
 
-                    print(
-                        f"Job {job.id} added "
-                        f"to Dead Letter Queue"
-                    )
+                        # ACK the original Stream message
+                        redis_client.xack(
+                            "taskscale:job_stream",
+                            "workers",
+                            message_id
+                        )
 
-        finally:
-            db.close()
+                        print(
+                            f"Job {job.id} permanently FAILED"
+                        )
+
+                        print(
+                            f"Job {job.id} added to Dead Letter Queue"
+                        )
+
+            finally:
+                db.close()
 
     except Exception as e:
         print(f"Worker error: {e}")
