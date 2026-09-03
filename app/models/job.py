@@ -18,6 +18,7 @@ class Job(Base):
     retry_count = Column(Integer, nullable=False, default=0)
     max_retries = Column(Integer, nullable=False, default=3)
     worker_id = Column(String(100), nullable=True)
+    idempotency_key = Column(String(255), nullable=True)
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now())
