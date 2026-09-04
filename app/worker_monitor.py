@@ -22,9 +22,12 @@ while True:
                 SELECT worker_id
                 FROM workers
                 WHERE last_heartbeat < CURRENT_TIMESTAMP
-                    - INTERVAL '10 seconds'
+                    - (:timeout * INTERVAL '1 second')
                     AND status = 'ALIVE'
-            """)
+            """),
+            {
+                "timeout": HEARTBEAT_TIMEOUT
+            }
         ).fetchall()
 
         if not dead_workers:
@@ -80,10 +83,12 @@ while True:
                     }
                 )
 
-                # Put the recovered job back into Redis
-                redis_client.rpush(
-                    "taskscale:jobs",
-                    str(job_id)
+                # Put the recovered job back into Redis Stream
+                redis_client.xadd(
+                    "taskscale:job_stream",
+                    {
+                        "job_id": str(job_id)
+                    }
                 )
 
                 print(

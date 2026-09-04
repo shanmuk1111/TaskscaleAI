@@ -119,10 +119,56 @@ while True:
             job = None
 
             try:
-                job = db.query(Job).filter(Job.id == job_id).first()
+                job = db.query(Job).filter(Job.id == int(job_id)).first()
 
                 if job is None:
                     print(f"Job {job_id} was not found in PostgreSQL")
+                    continue
+
+                # Duplicate execution protection
+                if job.status == "COMPLETED":
+                    print(
+                        f"Job {job.id} is already COMPLETED. "
+                        f"Skipping duplicate execution."
+                    )
+
+                    redis_client.xack(
+                        "taskscale:job_stream",
+                        "workers",
+                        message_id
+                    )
+
+                    print(f"ACK sent for duplicate job {job.id}")
+                    continue
+
+                
+                
+                # --------------------------------
+                # Atomic job claim
+                # --------------------------------
+
+                claim_result = (
+                    db.query(Job)
+                    .filter(
+                        Job.id == job.id,
+                        Job.status == "QUEUED"
+                    )
+                    .update(
+                        {
+                            Job.worker_id: worker_id,
+                            Job.status: "RUNNING"
+                        },
+                        synchronize_session=False
+                    )
+                )
+
+                db.commit()
+
+                if claim_result == 0:
+                    print(
+                        f"Job {job.id} could not be claimed. "
+                        f"Another worker may already own it."
+                    )
 
                     redis_client.xack(
                         "taskscale:job_stream",
@@ -131,11 +177,6 @@ while True:
                     )
 
                     continue
-
-                # Assign this job to the current worker
-                job.worker_id = worker_id
-                job.status = "RUNNING"
-                db.commit()
 
                 print(f"Job {job.id} is RUNNING")
 
