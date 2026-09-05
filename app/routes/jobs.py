@@ -31,10 +31,13 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
         max_retries=3,
         idempotency_key=job.idempotency_key
     )
-
-    db.add(new_job)
-    db.commit()
-    db.refresh(new_job)
+    try:
+        db.add(new_job)
+        db.commit()
+        db.refresh(new_job)
+    except Exception:
+        db.rollback()
+        raise
     
     
     # Add the job to the Redis Stream
