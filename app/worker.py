@@ -123,6 +123,13 @@ while True:
 
                 if job is None:
                     print(f"Job {job_id} was not found in PostgreSQL")
+
+                    redis_client.xack(
+                        "taskscale:job_stream",
+                        "workers",
+                        message_id
+                    )
+
                     continue
 
                 # Duplicate execution protection
@@ -140,8 +147,58 @@ while True:
 
                     print(f"ACK sent for duplicate job {job.id}")
                     continue
-
                 
+                # Check job dependency
+                if job.depends_on is not None:
+                    parent_job = (
+                        db.query(Job)
+                        .filter(Job.id == job.depends_on)
+                        .first()
+                    )
+
+                    if parent_job is None:
+                        print(
+                            f"Job {job.id} dependency {job.depends_on} "
+                            f"was not found"
+                        )
+
+                        job.status = "FAILED"
+                        job.error = (
+                            f"Dependency job {job.depends_on} was not found"
+                        )
+                        db.commit()
+
+                        redis_client.xack(
+                            "taskscale:job_stream",
+                            "workers",
+                            message_id
+                        )
+                        continue
+
+
+                    if parent_job.status != "COMPLETED":
+
+                        print(
+                            f"Job {job.id} is waiting for dependency "
+                            f"{parent_job.id} "
+                            f"(status: {parent_job.status})"
+                        )
+
+                        time.sleep(1)
+
+                        redis_client.xadd(
+                            "taskscale:job_stream",
+                            {"job_id": str(job.id)}
+                        )
+
+                        redis_client.xack(
+                            "taskscale:job_stream",
+                            "workers",
+                            message_id
+                        )
+
+                        continue
+                                    
                 
                 # --------------------------------
                 # Atomic job claim

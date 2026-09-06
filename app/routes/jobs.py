@@ -36,6 +36,7 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
     retry_count=0,
     max_retries=3,
     priority=job.priority,
+    depends_on=job.depends_on,
     idempotency_key=job.idempotency_key
 )
     try:
