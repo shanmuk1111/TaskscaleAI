@@ -24,13 +24,14 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
             return existing_job
 
     new_job = Job(
-        type=job.type,
-        status="QUEUED",
-        input=job.input,
-        retry_count=0,
-        max_retries=3,
-        idempotency_key=job.idempotency_key
-    )
+    type=job.type,
+    status="QUEUED",
+    input=job.input,
+    retry_count=0,
+    max_retries=3,
+    priority=job.priority,
+    idempotency_key=job.idempotency_key
+)
     try:
         db.add(new_job)
         db.commit()
@@ -41,11 +42,10 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
     
     
     # Add the job to the Redis Stream
-    redis_client.xadd(
-        "taskscale:job_stream",
-        {
-            "job_id": str(new_job.id)
-        }
-    )
-
+    redis_client.zadd(
+    "taskscale:priority_queue",
+    {
+        str(new_job.id): -job.priority
+    }
+)
     return new_job
