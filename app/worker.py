@@ -148,24 +148,46 @@ while True:
                     print(f"ACK sent for duplicate job {job.id}")
                     continue
                 
-                # Check job dependency
+                # --------------------------------
+                # Check job dependencies
+                # --------------------------------
+                dependencies = job.dependencies or []
+
+                dependency_ids = []
+
                 if job.depends_on is not None:
-                    parent_job = (
+                    dependency_ids.append(job.depends_on)
+
+                if job.dependencies:
+                    dependency_ids.extend(job.dependencies)
+
+                # Remove duplicates
+                dependency_ids = list(set(dependency_ids))
+
+                if dependency_ids:
+
+                    parent_jobs = (
                         db.query(Job)
-                        .filter(Job.id == job.depends_on)
-                        .first()
+                        .filter(Job.id.in_(dependency_ids))
+                        .all()
                     )
 
-                    if parent_job is None:
+                    found_ids = {parent.id for parent in parent_jobs}
+
+                    # Dependency does not exist
+                    missing_ids = set(dependency_ids) - found_ids
+
+                    if missing_ids:
                         print(
-                            f"Job {job.id} dependency {job.depends_on} "
-                            f"was not found"
+                            f"Job {job.id} has missing dependencies: "
+                            f"{list(missing_ids)}"
                         )
 
                         job.status = "FAILED"
                         job.error = (
-                            f"Dependency job {job.depends_on} was not found"
+                            f"Dependency jobs not found: {list(missing_ids)}"
                         )
+
                         db.commit()
 
                         redis_client.xack(
@@ -173,24 +195,25 @@ while True:
                             "workers",
                             message_id
                         )
+
                         continue
 
+                    # Dependencies exist but are not completed
+                    incomplete_dependencies = [
+                        parent.id
+                        for parent in parent_jobs
+                        if parent.status != "COMPLETED"
+                    ]
 
-                    if parent_job.status != "COMPLETED":
-
+                    if incomplete_dependencies:
                         print(
-                            f"Job {job.id} is waiting for dependency "
-                            f"{parent_job.id} "
-                            f"(status: {parent_job.status})"
+                            f"Job {job.id} is waiting for dependencies: "
+                            f"{incomplete_dependencies}"
                         )
 
-                        time.sleep(1)
-
-                        redis_client.xadd(
-                            "taskscale:job_stream",
-                            {"job_id": str(job.id)}
-                        )
-
+                        # IMPORTANT:
+                        # Do NOT put the job back into the stream here.
+                        # Keep it QUEUED in PostgreSQL.
                         redis_client.xack(
                             "taskscale:job_stream",
                             "workers",
@@ -198,8 +221,7 @@ while True:
                         )
 
                         continue
-                                    
-                
+                    
                 # --------------------------------
                 # Atomic job claim
                 # --------------------------------
@@ -261,6 +283,34 @@ while True:
 
                 job.status = "COMPLETED"
                 db.commit()
+                
+                # --------------------------------
+                # Wake up dependent jobs
+                # --------------------------------
+
+                dependent_jobs = (
+                    db.query(Job)
+                    .filter(
+                        Job.status == "QUEUED",
+                        (
+                            Job.depends_on == job.id
+                        ) | (
+                            Job.dependencies.contains([job.id])
+                        )
+                    )
+                    .all()
+                )
+
+                for dependent_job in dependent_jobs:
+                    redis_client.xadd(
+                        "taskscale:job_stream",
+                        {"job_id": str(dependent_job.id)}
+                    )
+
+                    print(
+                        f"Dependent job {dependent_job.id} "
+                        f"released after job {job.id} completed"
+                    )
 
                 # ACK only after successful processing
                 redis_client.xack(

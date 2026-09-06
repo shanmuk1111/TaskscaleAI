@@ -1,5 +1,6 @@
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional,List
+from pydantic import BaseModel, Field
 
 
 class JobCreate(BaseModel):
@@ -8,3 +9,4 @@ class JobCreate(BaseModel):
     idempotency_key: Optional[str] = None
     priority: int = 5
     depends_on: Optional[int] = None
+    dependencies: List[int] = Field(default_factory=list)

@@ -30,15 +30,16 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
             return existing_job
 
     new_job = Job(
-    type=job.type,
-    status="QUEUED",
-    input=job.input,
-    retry_count=0,
-    max_retries=3,
-    priority=job.priority,
-    depends_on=job.depends_on,
-    idempotency_key=job.idempotency_key
-)
+        type=job.type,
+        status="QUEUED",
+        input=job.input,
+        retry_count=0,
+        max_retries=3,
+        priority=job.priority,
+        idempotency_key=job.idempotency_key,
+        depends_on=job.depends_on,
+        dependencies=job.dependencies
+    )
     try:
         db.add(new_job)
         db.commit()

@@ -20,6 +20,8 @@ class Job(Base):
     priority = Column(Integer, nullable=False, default=5)
     worker_id = Column(String(100), nullable=True)
     idempotency_key = Column(String(255), nullable=True)
+    
+    dependencies = Column(JSONB, nullable=False, default=list)
     depends_on = Column(Integer, nullable=True)
 
     created_at = Column(DateTime, server_default=func.now())
