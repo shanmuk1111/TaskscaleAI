@@ -5,12 +5,15 @@ from app.database.database import get_db
 from app.models.job import Job
 from app.schemas.job import JobCreate
 from app.queue.redis_client import redis_client
+from app.rate_limiter import check_rate_limit
 
 router = APIRouter()
 
 
 @router.post("/jobs")
 def create_job(job: JobCreate, db: Session = Depends(get_db)):
+    
+    check_rate_limit("default-client")
 
     # Check if this idempotency key was already used
     if job.idempotency_key:
