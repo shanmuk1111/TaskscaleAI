@@ -6,12 +6,15 @@ from app.models.job import Job
 from app.schemas.job import JobCreate
 from app.queue.redis_client import redis_client
 from app.rate_limiter import check_rate_limit
+from app.backpressure import check_backpressure
 
 router = APIRouter()
 
 
 @router.post("/jobs")
 def create_job(job: JobCreate, db: Session = Depends(get_db)):
+    
+    check_backpressure()
     
     check_rate_limit("default-client")
 
