@@ -1,19 +1,26 @@
 import time
 
 from app.queue.redis_client import redis_client
+from app.distributed_lock import acquire_lock, release_lock
 
 
 PRIORITY_QUEUE = "taskscale:priority_queue"
 JOB_STREAM = "taskscale:job_stream"
 
-
 print("Scheduler started")
 
 
 while True:
+    lock_token = None
 
     try:
-        # Get the highest-priority job
+        lock_token = acquire_lock()
+
+        if lock_token is None:
+            print("Another scheduler holds the lock")
+            time.sleep(1)
+            continue
+
         result = redis_client.zpopmin(
             PRIORITY_QUEUE,
             count=1
@@ -30,12 +37,9 @@ while True:
             f"with priority score {score}"
         )
 
-        # Move selected job into the worker stream
         message_id = redis_client.xadd(
             JOB_STREAM,
-            {
-                "job_id": str(job_id)
-            }
+            {"job_id": str(job_id)}
         )
 
         print(
@@ -46,3 +50,7 @@ while True:
     except Exception as e:
         print(f"Scheduler error: {e}")
         time.sleep(1)
+
+    finally:
+        if lock_token is not None:
+            release_lock(lock_token)
