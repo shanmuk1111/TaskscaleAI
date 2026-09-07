@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
@@ -178,6 +178,87 @@ def get_worker_stats(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/workers")
+def get_workers(db: Session = Depends(get_db)):
+
+    workers = (
+        db.query(Worker)
+        .order_by(Worker.worker_id)
+        .all()
+    )
+
+    result = []
+
+    for worker in workers:
+
+        running_jobs = (
+            db.query(Job)
+            .filter(
+                Job.worker_id == worker.worker_id,
+                Job.status == "RUNNING"
+            )
+            .count()
+        )
+
+        completed_jobs = (
+            db.query(Job)
+            .filter(
+                Job.worker_id == worker.worker_id,
+                Job.status == "COMPLETED"
+            )
+            .count()
+        )
+
+        failed_jobs = (
+            db.query(Job)
+            .filter(
+                Job.worker_id == worker.worker_id,
+                Job.status == "FAILED"
+            )
+            .count()
+        )
+
+        result.append({
+            "worker_id": worker.worker_id,
+            "status": worker.status,
+            "last_heartbeat": worker.last_heartbeat,
+            "running_jobs": running_jobs,
+            "completed_jobs": completed_jobs,
+            "failed_jobs": failed_jobs
+        })
+
+    return {
+        "workers": result,
+        "total": len(result)
+    }
+
+@router.get("/queue")
+def get_queue(db: Session = Depends(get_db)):
+
+    queued_jobs = (
+        db.query(Job)
+        .filter(Job.status == "QUEUED")
+        .order_by(Job.priority.desc(), Job.id.asc())
+        .all()
+    )
+
+    return {
+        "queue_size": redis_client.zcard(
+            "taskscale:priority_queue"
+        ),
+        "jobs": [
+            {
+                "id": job.id,
+                "type": job.type,
+                "status": job.status,
+                "priority": job.priority,
+                "retry_count": job.retry_count,
+                "created_at": job.created_at
+            }
+            for job in queued_jobs
+        ]
+    }
+
 @router.get("/jobs/recent")
 def get_recent_jobs(db: Session = Depends(get_db)):
 
@@ -196,6 +277,87 @@ def get_recent_jobs(db: Session = Depends(get_db)):
             "priority": job.priority,
             "retry_count": job.retry_count,
             "worker_id": job.worker_id,
+            "created_at": job.created_at
+        }
+        for job in jobs
+    ]
+
+@router.get("/jobs")
+def get_jobs(
+    db: Session = Depends(get_db),
+    status: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100)
+):
+    query = db.query(Job)
+
+    # Filter by status
+    if status:
+        query = query.filter(Job.status == status.upper())
+
+    # Search by job type
+    if search:
+        query = query.filter(
+            Job.type.ilike(f"%{search}%")
+        )
+
+    # Total matching jobs
+    total = query.count()
+
+    # Pagination
+    offset = (page - 1) * limit
+
+    jobs = (
+        query
+        .order_by(Job.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "jobs": [
+            {
+                "id": job.id,
+                "type": job.type,
+                "status": job.status,
+                "priority": job.priority,
+                "retry_count": job.retry_count,
+                "worker_id": job.worker_id,
+                "created_at": job.created_at,
+                "completed_at": job.completed_at,
+                "error": job.error
+            }
+            for job in jobs
+        ],
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": (
+            (total + limit - 1) // limit
+            if total > 0
+            else 0
+        )
+    }
+    
+@router.get("/workflows")
+def get_workflows(db: Session = Depends(get_db)):
+
+    jobs = (
+        db.query(Job)
+        .order_by(Job.id.asc())
+        .all()
+    )
+
+    return [
+        {
+            "id": job.id,
+            "type": job.type,
+            "status": job.status,
+            "priority": job.priority,
+            "dependencies": job.dependencies,
+            "depends_on": job.depends_on,
             "created_at": job.created_at
         }
         for job in jobs

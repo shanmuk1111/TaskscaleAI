@@ -85,6 +85,49 @@ heartbeat_thread = threading.Thread(
 heartbeat_thread.start()
 
 
+def fail_dependent_jobs(db, failed_job_id):
+    dependent_jobs = (
+        db.query(Job)
+        .filter(Job.status == "QUEUED")
+        .all()
+    )
+
+    for dependent_job in dependent_jobs:
+
+        dependency_ids = [
+            dep_id
+            for dep_id in (dependent_job.dependencies or [])
+            if dep_id != 0
+        ]
+
+        if (
+            dependent_job.depends_on is not None
+            and dependent_job.depends_on != 0
+        ):
+            dependency_ids.append(dependent_job.depends_on)
+
+        if failed_job_id in dependency_ids:
+
+            dependent_job.status = "FAILED"
+
+            dependent_job.error = (
+                f"Dependency job {failed_job_id} failed"
+            )
+
+            db.commit()
+
+            print(
+                f"Dependent job {dependent_job.id} "
+                f"marked FAILED because job "
+                f"{failed_job_id} failed"
+            )
+
+            # Continue propagation
+            fail_dependent_jobs(
+                db,
+                dependent_job.id
+            )
+
 # --------------------------------
 # Job processing
 # --------------------------------
@@ -422,7 +465,11 @@ while True:
 
                     if job.retry_count < job.max_retries:
 
-                        job.status = "RETRYING"
+                        # Put the job back into QUEUED state
+                        # so another worker attempt can claim it.
+                        job.status = "QUEUED"
+                        job.worker_id = None
+
                         db.commit()
 
                         print(
@@ -451,10 +498,31 @@ while True:
                             f"Job {job.id} added back to Redis Stream"
                         )
 
+                        # ACK the failed attempt
+                        redis_client.xack(
+                            "taskscale:job_stream",
+                            "workers",
+                            message_id
+                        )
+
+                        print(
+                            f"Job {job.id} added back to Redis Stream"
+                        )
+
                     else:
 
                         job.status = "FAILED"
                         db.commit()
+
+                        print(
+                            f"Job {job.id} permanently FAILED"
+                        )
+
+                        # Propagate failure to dependent jobs
+                        fail_dependent_jobs(
+                            db,
+                            job.id
+                        )
 
                         # Put permanently failed job into DLQ
                         redis_client.rpush(
@@ -467,10 +535,6 @@ while True:
                             "taskscale:job_stream",
                             "workers",
                             message_id
-                        )
-
-                        print(
-                            f"Job {job.id} permanently FAILED"
                         )
 
                         print(
