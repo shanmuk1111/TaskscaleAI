@@ -155,11 +155,15 @@ while True:
 
                 dependency_ids = []
 
-                if job.depends_on is not None:
+                # Treat 0 as no dependency
+                if job.depends_on is not None and job.depends_on != 0:
                     dependency_ids.append(job.depends_on)
 
                 if job.dependencies:
-                    dependency_ids.extend(job.dependencies)
+                    dependency_ids.extend(
+                        dep_id for dep_id in job.dependencies
+                        if dep_id != 0
+                    )
 
                 # Remove duplicates
                 dependency_ids = list(set(dependency_ids))
@@ -199,6 +203,41 @@ while True:
                         continue
 
                     # Dependencies exist but are not completed
+                    # Check for failed dependencies
+                    failed_dependencies = [
+                        parent.id
+                        for parent in parent_jobs
+                        if parent.status == "FAILED"
+                    ]
+
+                    if failed_dependencies:
+                        print(
+                            f"Job {job.id} has failed dependencies: "
+                            f"{failed_dependencies}"
+                        )
+
+                        job.status = "FAILED"
+                        job.error = (
+                            f"Dependency jobs failed: {failed_dependencies}"
+                        )
+
+                        db.commit()
+
+                        redis_client.xack(
+                            "taskscale:job_stream",
+                            "workers",
+                            message_id
+                        )
+
+                        print(
+                            f"Job {job.id} marked FAILED because "
+                            f"its dependencies failed"
+                        )
+
+                        continue
+
+
+                    # Dependencies are still running or queued
                     incomplete_dependencies = [
                         parent.id
                         for parent in parent_jobs
@@ -211,9 +250,8 @@ while True:
                             f"{incomplete_dependencies}"
                         )
 
-                        # IMPORTANT:
-                        # Do NOT put the job back into the stream here.
-                        # Keep it QUEUED in PostgreSQL.
+                        # Keep job QUEUED.
+                        # Do not immediately put it back into Redis.
                         redis_client.xack(
                             "taskscale:job_stream",
                             "workers",
@@ -260,7 +298,7 @@ while True:
                 print(f"Job {job.id} is RUNNING")
 
                 # --------------------------------
-                # Simulate job processing
+                # Job processing
                 # --------------------------------
 
                 if job.input.get("fail_once") and job.retry_count == 0:
@@ -269,21 +307,65 @@ while True:
                 if job.input.get("force_fail"):
                     raise Exception("Simulated permanent failure")
 
-                time.sleep(5)
+
+                # --------------------------------
+                # AI workload
+                # --------------------------------
+
+                if job.type == "ai_summarization":
+
+                    text = job.input.get("text", "")
+
+                    if not text:
+                        raise Exception("AI summarization requires text input")
+
+                    print(
+                        f"AI summarization started for job {job.id}"
+                    )
+
+                    # Temporary AI processing simulation.
+                    # Real AI model integration will be added later.
+
+                    time.sleep(3)
+
+                    summary = (
+                        text[:200] +
+                        ("..." if len(text) > 200 else "")
+                    )
+
+                    job.result = {
+                        "job_type": "ai_summarization",
+                        "summary": summary,
+                        "job_id": job.id,
+                        "worker_id": worker_id
+                    }
+
+                    print(
+                        f"AI summarization completed for job {job.id}"
+                    )
+
+
+                # --------------------------------
+                # Normal workload
+                # --------------------------------
+
+                else:
+
+                    time.sleep(5)
+
+                    job.result = {
+                        "message": "Job processed successfully",
+                        "job_id": job.id,
+                        "worker_id": worker_id
+                    }
 
                 # --------------------------------
                 # Job succeeded
                 # --------------------------------
 
-                job.result = {
-                    "message": "Job processed successfully",
-                    "job_id": job.id,
-                    "worker_id": worker_id
-                }
-
                 job.status = "COMPLETED"
                 db.commit()
-                
+
                 # --------------------------------
                 # Wake up dependent jobs
                 # --------------------------------
