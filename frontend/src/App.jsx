@@ -22,39 +22,41 @@ function App() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    Promise.all([
-      fetch("http://127.0.0.1:8000/jobs/stats"),
-      fetch("http://127.0.0.1:8000/workers/stats"),
-      fetch("http://127.0.0.1:8000/jobs/recent"),
-    ])
-      .then(async ([jobsResponse, workersResponse, recentResponse]) => {
-        if (
-          !jobsResponse.ok ||
-          !workersResponse.ok ||
-          !recentResponse.ok
-        ) {
+    const fetchDashboardData = async () => {
+      try {
+        const [jobsResponse, workersResponse] = await Promise.all([
+          fetch("http://127.0.0.1:8000/jobs/stats"),
+          fetch("http://127.0.0.1:8000/workers/stats"),
+        ]);
+
+        if (!jobsResponse.ok || !workersResponse.ok) {
           throw new Error("Failed to fetch dashboard data");
         }
 
         const jobsData = await jobsResponse.json();
         const workersData = await workersResponse.json();
-        const recentData = await recentResponse.json();
 
-        return {
-          jobsData,
-          workersData,
-          recentData,
-        };
-      })
-      .then(({ jobsData, workersData, recentData }) => {
         setStats(jobsData);
         setWorkerStats(workersData);
-        setRecentJobs(recentData);
-      })
-      .catch((err) => {
+        setError("");
+      } catch (err) {
         setError(err.message);
-      });
-  }, []);
+      }
+    };
+
+  // Fetch immediately when dashboard opens
+  fetchDashboardData();
+
+  // Refresh every 5 seconds
+  const interval = setInterval(() => {
+    fetchDashboardData();
+  }, 5000);
+
+  // Stop timer when dashboard is closed
+  return () => {
+    clearInterval(interval);
+  };
+}, []);
 
   return (
     <div className="dashboard">
