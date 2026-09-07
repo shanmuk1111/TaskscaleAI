@@ -364,6 +364,8 @@ while True:
                 # --------------------------------
 
                 job.status = "COMPLETED"
+                job.completed_at = func.now()
+                
                 db.commit()
 
                 # --------------------------------

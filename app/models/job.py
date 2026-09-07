@@ -26,3 +26,4 @@ class Job(Base):
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now())
+    completed_at = Column(DateTime, nullable=True)

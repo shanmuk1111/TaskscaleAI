@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 
 function App() {
   const [stats, setStats] = useState({
-    total_jobs: 0,
-    queued_jobs: 0,
-    running_jobs: 0,
-    completed_jobs: 0,
-    failed_jobs: 0,
-  });
+  total_jobs: 0,
+  queued_jobs: 0,
+  running_jobs: 0,
+  completed_jobs: 0,
+  failed_jobs: 0,
+  queue_size: 0,
+  success_rate: 0,
+});
 
   const [workerStats, setWorkerStats] = useState({
     total_workers: 0,
@@ -97,6 +99,16 @@ function App() {
           <div className="card">
             <h3>Workers</h3>
             <p>{workerStats.alive_workers}</p>
+          </div>
+
+          <div className="card">
+          <h3>Queue Size</h3>
+          <p>{stats.queue_size}</p>
+         </div>
+
+         <div className="card">
+          <h3>Success Rate</h3>
+          <p>{stats.success_rate}%</p>
           </div>
         </section>
 

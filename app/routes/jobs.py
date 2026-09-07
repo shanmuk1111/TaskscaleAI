@@ -5,9 +5,10 @@ from app.database.database import get_db
 from app.models.job import Job
 from app.models.worker import Worker
 from app.schemas.job import JobCreate
-from app.queue.redis_client import redis_client
 from app.rate_limiter import check_rate_limit
 from app.backpressure import check_backpressure
+from app.queue.redis_client import redis_client
+from sqlalchemy import func
 
 
 router = APIRouter()
@@ -88,13 +89,69 @@ def get_job_stats(db: Session = Depends(get_db)):
         .filter(Job.status == "FAILED")
         .count()
     )
+    
+        # Calculate worker utilization
+    alive_workers = (
+        db.query(Worker)
+        .filter(Worker.status == "ALIVE")
+        .count()
+    )
+
+    if alive_workers > 0:
+        worker_utilization = (
+            running_jobs / alive_workers
+        ) * 100
+    else:
+        worker_utilization = 0
+    
+        # Calculate total retries
+    total_retries = db.query(
+        func.coalesce(func.sum(Job.retry_count), 0)
+    ).scalar()
+
+    # Calculate average job latency
+    average_latency = db.query(
+        func.avg(
+            func.extract(
+                "epoch",
+                Job.completed_at - Job.created_at
+            )
+        )
+    ).filter(
+        Job.status == "COMPLETED",
+        Job.completed_at.isnot(None)
+    ).scalar()
+
+    # Current jobs waiting in Redis priority queue
+    queue_size = redis_client.zcard(
+        "taskscale:priority_queue"
+    )
+
+    # Calculate success rate
+    finished_jobs = completed_jobs + failed_jobs
+
+    if finished_jobs > 0:
+        success_rate = (
+            completed_jobs / finished_jobs
+        ) * 100
+    else:
+        success_rate = 0
 
     return {
         "total_jobs": total_jobs,
         "queued_jobs": queued_jobs,
         "running_jobs": running_jobs,
         "completed_jobs": completed_jobs,
-        "failed_jobs": failed_jobs
+        "failed_jobs": failed_jobs,
+        "queue_size": queue_size,
+        "success_rate": round(success_rate, 2),
+        "average_latency_seconds": (
+            round(float(average_latency), 2)
+            if average_latency
+            else 0
+        ),
+        "total_retries": int(total_retries),
+        "worker_utilization": round(worker_utilization, 2)
     }
     
 @router.get("/workers/stats")
