@@ -6,7 +6,7 @@ from app.database.database import SessionLocal
 from app.models.job import Job
 from app.models.worker import Worker
 from app.queue.redis_client import redis_client
-
+import redis
 
 # --------------------------------
 # Worker identity
@@ -37,7 +37,25 @@ try:
 finally:
     db.close()
 
+# Initialize Redis Stream and consumer group
+STREAM_NAME = "taskscale:job_stream"
+GROUP_NAME = "workers"
 
+try:
+    redis_client.xgroup_create(
+        name=STREAM_NAME,
+        groupname=GROUP_NAME,
+        id="0",
+        mkstream=True
+    )
+    print(f"Redis consumer group '{GROUP_NAME}' created")
+except redis.exceptions.ResponseError as e:
+    if "BUSYGROUP" in str(e):
+        print(f"Redis consumer group '{GROUP_NAME}' already exists")
+    else:
+        raise
+    
+    
 # --------------------------------
 # Heartbeat function
 # --------------------------------
@@ -139,7 +157,7 @@ while True:
         result = redis_client.xreadgroup(
         groupname="workers",
         consumername=worker_id,
-        streams={"taskscale:job_stream": ">"},
+        streams={STREAM_NAME: ">"},
         count=1,
         block=5000
         )
@@ -168,8 +186,8 @@ while True:
                     print(f"Job {job_id} was not found in PostgreSQL")
 
                     redis_client.xack(
-                        "taskscale:job_stream",
-                        "workers",
+                        STREAM_NAME,
+                        GROUP_NAME,
                         message_id
                     )
 
@@ -183,8 +201,8 @@ while True:
                     )
 
                     redis_client.xack(
-                        "taskscale:job_stream",
-                        "workers",
+                        STREAM_NAME,
+                        GROUP_NAME,
                         message_id
                     )
 
@@ -238,9 +256,9 @@ while True:
                         db.commit()
 
                         redis_client.xack(
-                            "taskscale:job_stream",
-                            "workers",
-                            message_id
+                        STREAM_NAME,
+                        GROUP_NAME,
+                        message_id
                         )
 
                         continue
@@ -267,10 +285,10 @@ while True:
                         db.commit()
 
                         redis_client.xack(
-                            "taskscale:job_stream",
-                            "workers",
-                            message_id
-                        )
+                                                STREAM_NAME,
+                                                GROUP_NAME,
+                                                message_id
+                                                )
 
                         print(
                             f"Job {job.id} marked FAILED because "
@@ -296,10 +314,10 @@ while True:
                         # Keep job QUEUED.
                         # Do not immediately put it back into Redis.
                         redis_client.xack(
-                            "taskscale:job_stream",
-                            "workers",
-                            message_id
-                        )
+                                                STREAM_NAME,
+                                                GROUP_NAME,
+                                                message_id
+                                                )
 
                         continue
                     
@@ -331,10 +349,10 @@ while True:
                     )
 
                     redis_client.xack(
-                        "taskscale:job_stream",
-                        "workers",
-                        message_id
-                    )
+                                            STREAM_NAME,
+                                            GROUP_NAME,
+                                            message_id
+                                            )
 
                     continue
 
@@ -430,7 +448,7 @@ while True:
 
                 for dependent_job in dependent_jobs:
                     redis_client.xadd(
-                        "taskscale:job_stream",
+                        STREAM_NAME,
                         {"job_id": str(dependent_job.id)}
                     )
 
@@ -441,7 +459,7 @@ while True:
 
                 # ACK only after successful processing
                 redis_client.xack(
-                    "taskscale:job_stream",
+                    STREAM_NAME,
                     "workers",
                     message_id
                 )
@@ -481,7 +499,7 @@ while True:
 
                         # Put retry into the Stream
                         redis_client.xadd(
-                            "taskscale:job_stream",
+                            STREAM_NAME,
                             {
                                 "job_id": str(job.id)
                             }
@@ -489,9 +507,9 @@ while True:
 
                         # ACK the failed attempt
                         redis_client.xack(
-                            "taskscale:job_stream",
-                            "workers",
-                            message_id
+                        STREAM_NAME,
+                        GROUP_NAME,
+                        message_id
                         )
 
                         print(
@@ -500,9 +518,9 @@ while True:
 
                         # ACK the failed attempt
                         redis_client.xack(
-                            "taskscale:job_stream",
-                            "workers",
-                            message_id
+                        STREAM_NAME,
+                        GROUP_NAME,
+                        message_id
                         )
 
                         print(
@@ -532,9 +550,9 @@ while True:
 
                         # ACK the original Stream message
                         redis_client.xack(
-                            "taskscale:job_stream",
-                            "workers",
-                            message_id
+                        STREAM_NAME,
+                        GROUP_NAME,
+                        message_id
                         )
 
                         print(
