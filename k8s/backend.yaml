@@ -15,8 +15,8 @@ spec:
     spec:
       containers:
         - name: backend
-          image: taskscale-backend:latest
-          imagePullPolicy: Never
+          image: 098474709926.dkr.ecr.eu-north-1.amazonaws.com/taskscale-backend:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:

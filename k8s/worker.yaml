@@ -15,8 +15,8 @@ spec:
     spec:
       containers:
         - name: worker
-          image: taskscale-backend:latest
-          imagePullPolicy: Never
+          image: 098474709926.dkr.ecr.eu-north-1.amazonaws.com/taskscale-worker:latest
+          imagePullPolicy: Always
           command: ["python", "-m", "app.worker"]
           env:
             - name: DATABASE_URL

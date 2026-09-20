@@ -15,8 +15,8 @@ spec:
     spec:
       containers:
         - name: scheduler
-          image: taskscale-backend:latest
-          imagePullPolicy: Never
+          image: 098474709926.dkr.ecr.eu-north-1.amazonaws.com/taskscale-scheduler:latest
+          imagePullPolicy: Always
           command: ["python", "-m", "app.scheduler"]
           env:
             - name: DATABASE_URL
