@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskscale-postgres
+  namespace: taskscale
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskscale-postgres
+  template:
+    metadata:
+      labels:
+        app: taskscale-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: taskscale
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: "#Shanmuk1111"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: taskscale
+spec:
+  selector:
+    app: taskscale-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

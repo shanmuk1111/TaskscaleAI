@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskscale-worker
+  namespace: taskscale
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskscale-worker
+  template:
+    metadata:
+      labels:
+        app: taskscale-worker
+    spec:
+      containers:
+        - name: worker
+          image: taskscale-backend:latest
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.worker"]
+          env:
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://postgres:#Shanmuk1111@postgres:5432/taskscale"
+            - name: REDIS_HOST
+              value: "redis"
+            - name: REDIS_PORT
+              value: "6379"
