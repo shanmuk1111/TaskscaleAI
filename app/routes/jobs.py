@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+
+from app.metrics import jobs_total
 from app.database.database import get_db
 from app.models.job import Job
 from app.models.worker import Worker
@@ -9,6 +11,7 @@ from app.rate_limiter import check_rate_limit
 from app.backpressure import check_backpressure
 from app.queue.redis_client import redis_client
 from sqlalchemy import func
+
 
 
 router = APIRouter()
@@ -47,6 +50,7 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
         db.add(new_job)
         db.commit()
         db.refresh(new_job)
+        jobs_total.inc()
     except Exception:
         db.rollback()
         raise

@@ -7,6 +7,22 @@ from app.models.job import Job
 from app.models.worker import Worker
 from app.queue.redis_client import redis_client
 import redis
+from prometheus_client import start_http_server
+
+from app.metrics import (
+    jobs_completed_total,
+    jobs_failed_total,
+    job_retries_total,
+    job_duration_seconds,
+)
+
+# --------------------------------
+# Worker metrics
+# --------------------------------
+
+start_http_server(8001)
+print("Worker metrics server started on port 8001")
+
 
 # --------------------------------
 # Worker identity
@@ -357,6 +373,8 @@ while True:
                     continue
 
                 print(f"Job {job.id} is RUNNING")
+                
+                job_start_time = time.perf_counter()
 
                 # --------------------------------
                 # Job processing
@@ -429,6 +447,11 @@ while True:
                 
                 db.commit()
 
+                jobs_completed_total.inc()
+
+                job_duration_seconds.observe(
+                    time.perf_counter() - job_start_time
+                )
                 # --------------------------------
                 # Wake up dependent jobs
                 # --------------------------------
@@ -482,6 +505,8 @@ while True:
                     job.error = str(e)
 
                     if job.retry_count < job.max_retries:
+                        
+                        job_retries_total.inc()
 
                         # Put the job back into QUEUED state
                         # so another worker attempt can claim it.
@@ -516,21 +541,17 @@ while True:
                             f"Job {job.id} added back to Redis Stream"
                         )
 
-                        # ACK the failed attempt
-                        redis_client.xack(
-                        STREAM_NAME,
-                        GROUP_NAME,
-                        message_id
-                        )
-
-                        print(
-                            f"Job {job.id} added back to Redis Stream"
-                        )
 
                     else:
 
                         job.status = "FAILED"
                         db.commit()
+
+                        jobs_failed_total.inc()
+
+                        job_duration_seconds.observe(
+                            time.perf_counter() - job_start_time
+                        )
 
                         print(
                             f"Job {job.id} permanently FAILED"

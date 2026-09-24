@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: taskscale-backend
+  namespace: monitoring
+  labels:
+    release: taskscale-monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - taskscale
+
+  selector:
+    matchLabels:
+      app: taskscale-backend
+
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
