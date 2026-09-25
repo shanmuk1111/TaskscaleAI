@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from app.queue.redis_client import redis_client
 
 
-RATE_LIMIT = 5
+RATE_LIMIT = 1000
 WINDOW_SECONDS = 60
 
 
