@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskscale-worker-monitor
+  namespace: taskscale
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskscale-worker-monitor
+  template:
+    metadata:
+      labels:
+        app: taskscale-worker-monitor
+    spec:
+      containers:
+        - name: worker-monitor
+          image: taskscale-worker:redis-fix
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.worker_monitor"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: taskscale-db
+                  key: DATABASE_URL
+            - name: REDIS_HOST
+              value: "redis"
+            - name: REDIS_PORT
+              value: "6379"
