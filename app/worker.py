@@ -8,6 +8,7 @@ from app.models.worker import Worker
 from app.queue.redis_client import redis_client
 import redis
 from prometheus_client import start_http_server
+from sqlalchemy.sql import func, text
 
 from app.metrics import (
     jobs_completed_total,
@@ -34,43 +35,101 @@ print(f"Worker started: {worker_id}")
 
 
 # --------------------------------
-# Register worker
+# Wait for PostgreSQL
 # --------------------------------
 
-db = SessionLocal()
+def wait_for_database():
+    while True:
+        db = SessionLocal()
 
-try:
-    worker = Worker(
-        worker_id=worker_id,
-        status="ALIVE"
-    )
+        try:
+            db.execute(text("SELECT 1"))
+            db.commit()
 
-    db.add(worker)
-    db.commit()
+            print("PostgreSQL is ready")
+            return
 
-    print(f"Worker {worker_id} registered")
+        except Exception as e:
+            db.rollback()
+            print(f"Waiting for PostgreSQL: {e}")
+            time.sleep(2)
 
-finally:
-    db.close()
+        finally:
+            db.close()
+
+
+def register_worker():
+    while True:
+        db = SessionLocal()
+
+        try:
+            worker = Worker(
+                worker_id=worker_id,
+                status="ALIVE"
+            )
+
+            db.add(worker)
+            db.commit()
+
+            print(f"Worker {worker_id} registered")
+            return
+
+        except Exception as e:
+            db.rollback()
+
+            print(
+                f"Worker registration waiting for database/schema: {e}"
+            )
+
+            time.sleep(2)
+
+        finally:
+            db.close()
+
+
+wait_for_database()
+register_worker()
 
 # Initialize Redis Stream and consumer group
 STREAM_NAME = "taskscale:job_stream"
 GROUP_NAME = "workers"
 
-try:
-    redis_client.xgroup_create(
-        name=STREAM_NAME,
-        groupname=GROUP_NAME,
-        id="0",
-        mkstream=True
-    )
-    print(f"Redis consumer group '{GROUP_NAME}' created")
-except redis.exceptions.ResponseError as e:
-    if "BUSYGROUP" in str(e):
-        print(f"Redis consumer group '{GROUP_NAME}' already exists")
-    else:
-        raise
-    
+def wait_for_redis():
+    while True:
+        try:
+            redis_client.ping()
+
+            print("Redis is ready")
+
+            try:
+                redis_client.xgroup_create(
+                    name=STREAM_NAME,
+                    groupname=GROUP_NAME,
+                    id="0",
+                    mkstream=True
+                )
+
+                print(
+                    f"Redis consumer group '{GROUP_NAME}' created"
+                )
+
+            except redis.exceptions.ResponseError as e:
+                if "BUSYGROUP" in str(e):
+                    print(
+                        f"Redis consumer group "
+                        f"'{GROUP_NAME}' already exists"
+                    )
+                else:
+                    raise
+
+            return
+
+        except Exception as e:
+            print(f"Waiting for Redis: {e}")
+            time.sleep(2)
+
+
+wait_for_redis()
     
 # --------------------------------
 # Heartbeat function
@@ -108,8 +167,6 @@ def send_heartbeat():
 # --------------------------------
 # Start heartbeat thread
 # --------------------------------
-
-from sqlalchemy.sql import func
 
 heartbeat_thread = threading.Thread(
     target=send_heartbeat,
