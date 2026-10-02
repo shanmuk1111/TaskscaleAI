@@ -1,33 +1,33 @@
 {
-  "timestamp_utc": "2026-10-01T17:05:33.412204+00:00",
-  "benchmark": "Day 41 clean 1000-job benchmark",
-  "job_id_start_boundary": 1002,
-  "expected_first_job_id": 1003,
-  "expected_last_job_id": 2002,
-  "jobs_requested": 1000,
-  "jobs_accepted_by_api": 1000,
-  "http_429_retries": 164,
+  "timestamp_utc": "2026-10-02T12:31:45.656693+00:00",
+  "benchmark": "Day 42 clean 10000-job benchmark",
+  "job_id_start_boundary": 0,
+  "expected_first_job_id": 1,
+  "expected_last_job_id": 10000,
+  "jobs_requested": 10000,
+  "jobs_accepted_by_api": 10000,
+  "http_429_retries": 1427,
   "other_http_errors": 0,
-  "workers_before": 3,
+  "workers_before": 5,
   "workers_after": 3,
-  "hpa_cpu_before_percent": 20,
+  "hpa_cpu_before_percent": 13,
   "hpa_cpu_after_percent": 13,
   "database_before": {
-    "completed": 1002,
+    "completed": 0,
     "queued": 0,
     "running": 0,
     "failed": 0
   },
   "benchmark_final_counts": {
-    "completed": 1000,
-    "queued": 0,
-    "running": 0,
+    "completed": 2843,
+    "queued": 7154,
+    "running": 3,
     "failed": 0,
-    "total": 1000
+    "total": 10000
   },
-  "submission_seconds": 103.687,
-  "end_to_end_seconds": 1059.288,
-  "submission_rate_jobs_per_second": 9.644,
-  "completion_rate_jobs_per_second": 0.944,
-  "benchmark_completed_exactly": true
+  "submission_seconds": 1094.3,
+  "end_to_end_seconds": 2895.483,
+  "submission_rate_jobs_per_second": 9.138,
+  "completion_rate_jobs_per_second": null,
+  "benchmark_completed_exactly": false
 }

@@ -7,13 +7,13 @@ from pathlib import Path
 import requests
 
 BASE_URL = "http://localhost:8000"
-TOTAL_JOBS = 1000
+TOTAL_JOBS = 10000
 POLL_INTERVAL = 1
 POLL_TIMEOUT = 1800
 
 JOB_PAYLOAD = {
     "type": "ai_summarization",
-    "input": {"text": "TaskScale AI Day 41 clean benchmark"}
+    "input": {"text": "TaskScale AI Day 42 clean benchmark"}
 }
 
 
@@ -132,7 +132,7 @@ def get_benchmark_counts(start_id):
 def main():
     session = requests.Session()
 
-    print("========== TASKSCALE DAY 41 CLEAN BENCHMARK ==========")
+    print("========== TASKSCALE DAY 42 CLEAN BENCHMARK ==========")
 
     # Clean boundary: capture the last existing job before this test.
     start_id = get_max_job_id()
@@ -245,7 +245,7 @@ def main():
 
     result = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "benchmark": "Day 41 clean 1000-job benchmark",
+        "benchmark": "Day 42 clean 10000-job benchmark",
         "job_id_start_boundary": start_id,
         "expected_first_job_id": expected_first_id,
         "expected_last_job_id": expected_last_id,
